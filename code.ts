@@ -111,7 +111,7 @@ interface PropertyMappingConfig {
 }
 
 interface PositionConfig {
-  direction: 'top-to-bottom' | 'bottom-to-top' | 'left-to-right' | 'right-to-left';
+  direction: 'top-to-bottom' | 'top-to-bottom-and-back' | 'bottom-to-top' | 'left-to-right' | 'left-to-right-and-back' | 'right-to-left';
   everyN: number;
   skip?: number;
 }
@@ -160,6 +160,7 @@ interface PluginMessage {
   // New ordering options for add mode (By Order)
   orderMode?: 'selection' | 'layer';
   orderReverse?: boolean;
+  orderBidirectional?: boolean;
   updateSource?: 'component' | 'instance' | 'instance-remove-variant';
   width?: number;
   height?: number;
@@ -790,6 +791,73 @@ function createTrigger(triggerType: string, delay: number = 0): Trigger {
   return trigger;
 }
 
+function isBidirectionalPositionDirection(direction: string): boolean {
+  return direction === 'top-to-bottom-and-back' || direction === 'left-to-right-and-back';
+}
+
+function getBasePositionDirection(direction: string): 'top-to-bottom' | 'bottom-to-top' | 'left-to-right' | 'right-to-left' {
+  if (direction === 'top-to-bottom-and-back') return 'top-to-bottom';
+  if (direction === 'left-to-right-and-back') return 'left-to-right';
+  if (direction === 'bottom-to-top' || direction === 'right-to-left') return direction;
+  return direction === 'left-to-right' ? 'left-to-right' : 'top-to-bottom';
+}
+
+async function appendInteractionBetweenNodes(
+  fromNode: SceneNode,
+  toNode: SceneNode,
+  trigger: Trigger,
+  transition: Transition
+): Promise<boolean> {
+  const sourceNode = getReactionTargetNode(fromNode) || resolveInteractiveNode(fromNode);
+  if (!sourceNode || !supportsInteractions(sourceNode)) {
+    return false;
+  }
+
+  const sourceVariant = await getVariantComponentForChangeTo(fromNode);
+  const targetVariant = await getVariantComponentForChangeTo(toNode);
+  const canChangeTo = areSameComponentSet(sourceVariant, targetVariant) &&
+    fromNode.type !== 'INSTANCE' && toNode.type !== 'INSTANCE';
+
+  let newReaction: Reaction | null = null;
+
+  if (canChangeTo && targetVariant) {
+    newReaction = {
+      actions: [{
+        type: 'NODE',
+        destinationId: targetVariant.id,
+        navigation: 'CHANGE_TO',
+        transition: transition,
+        preserveScrollPosition: false
+      }],
+      trigger: trigger
+    };
+  } else {
+    const targetResolved = resolveInteractiveNode(toNode);
+    const rawTarget = (targetResolved as unknown as SceneNode) || toNode;
+    const targetFrame = findNearestFrame(rawTarget);
+    const destinationId = targetFrame ? targetFrame.id : rawTarget.id;
+
+    if (!destinationId) {
+      return false;
+    }
+
+    newReaction = {
+      actions: [{
+        type: 'NODE',
+        destinationId: destinationId,
+        navigation: 'NAVIGATE',
+        transition: transition,
+        preserveScrollPosition: false
+      }],
+      trigger: trigger
+    };
+  }
+
+  const currentReactions = sourceNode.reactions || [];
+  await sourceNode.setReactionsAsync([...currentReactions, newReaction]);
+  return true;
+}
+
 // Send selected layers info to UI
 async function sendLayersToUI() {
   const supportedLayers: LayerInfo[] = [];
@@ -855,6 +923,7 @@ async function sendLayersToUI() {
 
 // Helper function to sort nodes by position based on direction (row/column grouping with tolerance)
 function sortNodesByPosition(nodes: SceneNode[], direction: string): SceneNode[] {
+  const baseDirection = getBasePositionDirection(direction);
   // For component sets, use their children nodes for position calculation
   const expandedNodes: SceneNode[] = [];
   nodes.forEach((node: SceneNode) => {
@@ -904,19 +973,19 @@ function sortNodesByPosition(nodes: SceneNode[], direction: string): SceneNode[]
   let groupsAscendingKey: AxisKey; // axis used to order groups themselves (natural reading order)
   let withinAscending = true;    // whether traversal within a group is ascending or descending
 
-  if (direction === 'top-to-bottom') {
+  if (baseDirection === 'top-to-bottom') {
     // Traverse down within each column; columns ordered left-to-right
     groupingKey = 'cx';
     traverseKey = 'cy';
     groupsAscendingKey = 'cx';
     withinAscending = true;
-  } else if (direction === 'bottom-to-top') {
+  } else if (baseDirection === 'bottom-to-top') {
     // Traverse up within each column; columns ordered left-to-right
     groupingKey = 'cx';
     traverseKey = 'cy';
     groupsAscendingKey = 'cx';
     withinAscending = false;
-  } else if (direction === 'left-to-right') {
+  } else if (baseDirection === 'left-to-right') {
     // Traverse right within each row; rows ordered top-to-bottom
     groupingKey = 'cy';
     traverseKey = 'cx';
@@ -982,6 +1051,8 @@ function sortNodesByPosition(nodes: SceneNode[], direction: string): SceneNode[]
 // Helper function to create position-based pairs with group chain logic
 function createPositionPairs(nodes: SceneNode[], groupSize: number, direction: string, skip: number = 0): Array<{ from: SceneNode, to: SceneNode }> {
   const pairs: Array<{ from: SceneNode, to: SceneNode }> = [];
+  const baseDirection = getBasePositionDirection(direction);
+  const isBidirectional = isBidirectionalPositionDirection(direction);
 
   // Recompute positions to detect grouping boundaries (rows/columns) identical to sorting logic
   type Positioned = {
@@ -1016,17 +1087,17 @@ function createPositionPairs(nodes: SceneNode[], groupSize: number, direction: s
   let groupsAscendingKey: AxisKey;
   let withinAscending = true;
 
-  if (direction === 'top-to-bottom') {
+  if (baseDirection === 'top-to-bottom') {
     groupingKey = 'cx';
     traverseKey = 'cy';
     groupsAscendingKey = 'cx';
     withinAscending = true;
-  } else if (direction === 'bottom-to-top') {
+  } else if (baseDirection === 'bottom-to-top') {
     groupingKey = 'cx';
     traverseKey = 'cy';
     groupsAscendingKey = 'cx';
     withinAscending = false;
-  } else if (direction === 'left-to-right') {
+  } else if (baseDirection === 'left-to-right') {
     groupingKey = 'cy';
     traverseKey = 'cx';
     groupsAscendingKey = 'cy';
@@ -1077,6 +1148,9 @@ function createPositionPairs(nodes: SceneNode[], groupSize: number, direction: s
       const chunkEnd = Math.min(start + groupSize, g.length);
       for (let i = start; i < chunkEnd - 1; i++) {
         pairs.push({ from: g[i].node, to: g[i + 1].node });
+        if (isBidirectional) {
+          pairs.push({ from: g[i + 1].node, to: g[i].node });
+        }
       }
     }
   }
@@ -1538,6 +1612,7 @@ async function applyInteractions(
   stepIncremental?: StepIncrementalConfig,
   orderMode?: 'selection' | 'layer',
   orderReverse?: boolean,
+  orderBidirectional?: boolean,
   updateSource?: 'component' | 'instance' | 'instance-remove-variant'
 ): Promise<boolean> {
   let supportedNodes = getOrderedSupportedSelection();
@@ -2248,7 +2323,7 @@ async function applyInteractions(
           }
         } else {
           console.log('[PLUGIN] Using selection-order chaining');
-          console.log('[PLUGIN] orderMode:', orderMode, 'orderReverse:', orderReverse);
+          console.log('[PLUGIN] orderMode:', orderMode, 'orderReverse:', orderReverse, 'orderBidirectional:', orderBidirectional);
           // Apply By Order options: layer list ordering and reverse
           if (orderMode === 'layer') {
             const getIndexPath = (node: SceneNode): number[] => {
@@ -2291,6 +2366,9 @@ async function applyInteractions(
           console.log('Creating add mode interactions in this order:');
           for (let i = 0; i < supportedNodes.length - 1; i++) {
             console.log(`  ${i + 1}. ${supportedNodes[i].name} (id: ${supportedNodes[i].id}) → ${supportedNodes[i + 1].name} (id: ${supportedNodes[i + 1].id})`);
+            if (orderBidirectional) {
+              console.log(`     ${supportedNodes[i + 1].name} (id: ${supportedNodes[i + 1].id}) → ${supportedNodes[i].name} (id: ${supportedNodes[i].id})`);
+            }
           }
         }
         console.log('=== END INTERACTION CREATION DEBUG ===');
@@ -2300,12 +2378,6 @@ async function applyInteractions(
           const pairs = createPositionPairs(supportedNodes, positionConfig.everyN, positionConfig.direction, positionConfig.skip || 0);
 
           for (const pair of pairs) {
-            const sourceNode = getReactionTargetNode(pair.from) || resolveInteractiveNode(pair.from);
-            if (!sourceNode || !supportsInteractions(sourceNode)) {
-              console.log('[PLUGIN] Skipping position pair: source node does not support interactions');
-              continue;
-            }
-
             const trigger = createTrigger(settings.trigger, settings.delay);
             const bezierValues = settings.curve === 'CUSTOM_BEZIER' ? {
               x1: settings.bezierX1 || 0.25,
@@ -2324,51 +2396,12 @@ async function applyInteractions(
               continue;
             }
 
-            // Decide between CHANGE_TO (variants of same set) vs NAVIGATE (frames)
-            // For instances, always use NAVIGATE instead of CHANGE_TO
-            const sourceVariant = await getVariantComponentForChangeTo(pair.from);
-            const targetVariant = await getVariantComponentForChangeTo(pair.to);
-            const canChangeTo = areSameComponentSet(sourceVariant, targetVariant) &&
-              pair.from.type !== 'INSTANCE' && pair.to.type !== 'INSTANCE';
-
-            if (canChangeTo && targetVariant) {
-              const newReaction: Reaction = {
-                actions: [{
-                  type: 'NODE',
-                  destinationId: targetVariant.id,
-                  navigation: 'CHANGE_TO',
-                  transition: transition,
-                  preserveScrollPosition: false
-                }],
-                trigger: trigger
-              };
-              const currentReactions = sourceNode.reactions || [];
-              await sourceNode.setReactionsAsync([...currentReactions, newReaction]);
+            const didCreate = await appendInteractionBetweenNodes(pair.from, pair.to, trigger, transition);
+            if (didCreate) {
               createdAny = true;
               interactionsCreated++;
             } else {
-              const targetResolved = resolveInteractiveNode(pair.to);
-              const rawTarget = (targetResolved as unknown as SceneNode) || pair.to;
-              const targetFrame = findNearestFrame(rawTarget);
-              const destinationId = targetFrame ? targetFrame.id : rawTarget.id;
-              if (destinationId) {
-                const newReaction: Reaction = {
-                  actions: [{
-                    type: 'NODE',
-                    destinationId: destinationId,
-                    navigation: 'NAVIGATE',
-                    transition: transition,
-                    preserveScrollPosition: false
-                  }],
-                  trigger: trigger
-                };
-                const currentReactions = sourceNode.reactions || [];
-                await sourceNode.setReactionsAsync([...currentReactions, newReaction]);
-                createdAny = true;
-                interactionsCreated++;
-              } else {
-                console.log('[PLUGIN] Skipping position pair: could not resolve target destination for', pair.to.name);
-              }
+              console.log('[PLUGIN] Skipping position pair: could not resolve source or target for', pair.from.name, '→', pair.to.name);
             }
           }
         } else {
@@ -2377,10 +2410,6 @@ async function applyInteractions(
           supportedNodes = sortNodesForStepIncremental(supportedNodes, stepIncremental);
 
           for (let i = 0; i < supportedNodes.length - 1; i++) {
-            const sourceNode = getReactionTargetNode(supportedNodes[i]) || resolveInteractiveNode(supportedNodes[i]);
-
-            if (!sourceNode) continue;
-
             // Apply step incremental values to settings for this node
             const nodeSettings = applyStepIncrementalToSettings(settings, i, stepIncremental);
 
@@ -2400,54 +2429,21 @@ async function applyInteractions(
 
             if (!transition) continue;
 
-            // Decide between CHANGE_TO (variants of same set) vs NAVIGATE (frames)
-            // For instances, always use NAVIGATE instead of CHANGE_TO
-            const sourceVariant = await getVariantComponentForChangeTo(supportedNodes[i]);
-            const targetVariant = await getVariantComponentForChangeTo(supportedNodes[i + 1]);
-            const canChangeTo = areSameComponentSet(sourceVariant, targetVariant) &&
-              supportedNodes[i].type !== 'INSTANCE' && supportedNodes[i + 1].type !== 'INSTANCE';
-
-            if (canChangeTo && targetVariant) {
-              const newReaction: Reaction = {
-                actions: [{
-                  type: 'NODE',
-                  destinationId: targetVariant.id,
-                  navigation: 'CHANGE_TO',
-                  transition: transition,
-                  preserveScrollPosition: false
-                }],
-                trigger: trigger
-              };
-
-              const currentReactions = sourceNode.reactions || [];
-              await sourceNode.setReactionsAsync([...currentReactions, newReaction]);
+            const didCreateForward = await appendInteractionBetweenNodes(supportedNodes[i], supportedNodes[i + 1], trigger, transition);
+            if (didCreateForward) {
               createdAny = true;
               interactionsCreated++;
             } else {
-              // Only create NAVIGATE when a valid Frame destination can be resolved
-              const targetResolved = resolveInteractiveNode(supportedNodes[i + 1]);
-              const rawTarget = (targetResolved as unknown as SceneNode) || supportedNodes[i + 1];
-              const targetFrame = findNearestFrame(rawTarget);
+              console.log('[PLUGIN] Skipping pair: could not resolve source or target for', supportedNodes[i].name, '→', supportedNodes[i + 1].name);
+            }
 
-              const destinationId = targetFrame ? targetFrame.id : rawTarget.id;
-              if (destinationId) {
-                const newReaction: Reaction = {
-                  actions: [{
-                    type: 'NODE',
-                    destinationId: destinationId,
-                    navigation: 'NAVIGATE',
-                    transition: transition,
-                    preserveScrollPosition: false
-                  }],
-                  trigger: trigger
-                };
-
-                const currentReactions = sourceNode.reactions || [];
-                await sourceNode.setReactionsAsync([...currentReactions, newReaction]);
+            if (orderBidirectional) {
+              const didCreateReverse = await appendInteractionBetweenNodes(supportedNodes[i + 1], supportedNodes[i], trigger, transition);
+              if (didCreateReverse) {
                 createdAny = true;
                 interactionsCreated++;
               } else {
-                console.log('[PLUGIN] Skipping NAVIGATE creation: could not resolve target destination for', supportedNodes[i + 1].name);
+                console.log('[PLUGIN] Skipping reverse pair: could not resolve source or target for', supportedNodes[i + 1].name, '→', supportedNodes[i].name);
               }
             }
           }
@@ -2694,6 +2690,7 @@ figma.ui.onmessage = async (msg: PluginMessage) => {
           msg.stepIncremental,
           msg.orderMode,
           msg.orderReverse,
+          msg.orderBidirectional,
           msg.updateSource
         );
       }
