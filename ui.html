@@ -141,7 +141,9 @@
       gap: 8px;
       height: 100%;
       overflow-y: auto;
+      overflow-x: hidden;
       padding: 16px 12px;
+      position: relative;
       mask-image: linear-gradient(to bottom, transparent 0%, black 5%, black 95%, transparent 100%);
       mask-size: 100% 100%, 100% 100%;
       mask-repeat: no-repeat;
@@ -159,6 +161,25 @@
       }
     }
 
+    .layers-list-content {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-height: 100%;
+      padding-left: 16px;
+    }
+
+    .layer-flow-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      pointer-events: none;
+      z-index: 2;
+      overflow: visible;
+    }
+
     .layer-item.fading {
       opacity: 1;
       transform: translateY(0) scale(1);
@@ -171,11 +192,12 @@
       opacity: 0;
       transform: translateY(10px) scale(0.95);
       transition: opacity 0.3s ease, transform 0.3s ease;
-      padding: 6px 8px;
+      padding: 8px 8px 8px 14px;
       transition: all 0.2s;
       line-break: anywhere;
       position: relative;
       cursor: pointer;
+      z-index: 1;
     }
 
     .layer-item:hover {
@@ -256,32 +278,150 @@
       font-size: 10px;
       color: var(--figma-color-text-secondary);
       line-height: 1.2;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
     }
 
-    .target-info {
-      padding-top: 0px;
-      margin-top: 0px;
+    .interaction-row {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      position: relative;
+    }
+
+    .interaction-meta {
+      line-height: 1.35;
+    }
+
+    .interaction-source-indicator {
+      color: var(--figma-color-text-secondary);
+      font-size: 9px;
+      opacity: 0.7;
+    }
+
+    .interaction-target {
       opacity: 0;
-      color: #00c8ff;
-      filter: blur(4px);
+      transform: translateY(-4px);
       max-height: 0;
       overflow: hidden;
-      transition: opacity 0.3s ease, filter 0.3s ease, max-height 0.3s ease;
-      display: block;
+      transition: opacity 0.25s ease, transform 0.25s ease, max-height 0.25s ease, margin-top 0.25s ease;
+      margin-top: 0;
     }
 
-    .layer-item:hover .target-info {
-      margin-top: 2px;
+    .layer-item:hover .interaction-target,
+    .layer-item.flow-source .interaction-target {
       opacity: 1;
-      filter: blur(0px);
-      max-height: 100px;
-      padding-bottom: 8px;
-      border-bottom: 1px solid var(--figma-color-border);
+      transform: translateY(0);
+      max-height: 44px;
+      margin-top: 6px;
     }
 
-    .layer-item:hover .target-info:last-child {
-      border-bottom: none;
-      padding-bottom: 0px;
+    .target-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 20px;
+      min-width: 0;
+      padding: 2px 6px;
+      border-radius: 999px;
+      border: 1px solid rgba(0, 200, 255, 0.18);
+      background: rgba(0, 200, 255, 0.08);
+      color: #00aee0;
+      font-size: 10px;
+      line-height: 1.2;
+      width: fit-content;
+      max-width: 100%;
+    }
+
+    .target-chip-icon {
+      font-size: 11px;
+      line-height: 1;
+      opacity: 0.9;
+      flex: 0 0 auto;
+    }
+
+    .target-chip-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .target-chip-state {
+      color: inherit;
+      opacity: 0.72;
+      flex: 0 0 auto;
+    }
+
+    .target-chip.is-connectable {
+      border-color: rgba(0, 200, 255, 0.24);
+      background: rgba(0, 200, 255, 0.08);
+      color: #00aee0;
+    }
+
+    .target-chip.is-off-list {
+      border-color: rgba(255, 201, 92, 0.22);
+      background: rgba(255, 201, 92, 0.1);
+      color: #c98400;
+    }
+
+    .target-chip.is-broken {
+      border-color: rgba(240, 74, 74, 0.22);
+      background: rgba(240, 74, 74, 0.1);
+      color: var(--figma-color-text-danger, #cf3f3f);
+    }
+
+    .target-chip.is-action {
+      border-color: rgba(126, 138, 160, 0.22);
+      background: rgba(126, 138, 160, 0.12);
+      color: var(--figma-color-text-secondary);
+    }
+
+    .layer-item.flow-source {
+      border-color: #00c8ff;
+      box-shadow: inset 3px 0 0 rgba(0, 200, 255, 0.72), 0 0 0 1px rgba(0, 200, 255, 0.28), 0 6px 14px rgba(0, 200, 255, 0.12);
+    }
+
+    .layer-item.flow-target {
+      border-color: rgba(0, 200, 255, 0.5);
+      background: rgba(0, 200, 255, 0.05);
+      box-shadow: inset 3px 0 0 rgba(0, 200, 255, 0.48), 0 0 0 1px rgba(0, 200, 255, 0.16);
+    }
+
+    .layer-item.flow-target .layer-name {
+      color: #00aee0;
+    }
+
+    .layer-item.flow-source .target-chip.is-connectable {
+      border-color: rgba(0, 200, 255, 0.42);
+      background: rgba(0, 200, 255, 0.14);
+    }
+
+    .layer-flow-path {
+      fill: none;
+      stroke: #00c8ff;
+      stroke-width: 1.75;
+      stroke-linecap: round;
+      opacity: 0.78;
+      filter: drop-shadow(0 0 0.75px rgba(0, 0, 0, 0.72)) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.38));
+    }
+
+    .layer-flow-dot {
+      fill: #00c8ff;
+      opacity: 0.95;
+      filter: drop-shadow(0 0 4px rgba(0, 200, 255, 0.45));
+    }
+
+    .layer-flow-source-dot {
+      fill: rgba(0, 200, 255, 0.2);
+      stroke: #00c8ff;
+      stroke-width: 1.25;
+      opacity: 0.95;
+    }
+
+    .interaction-empty {
+      display: block;
     }
 
     .no-layers {
@@ -2676,6 +2816,10 @@
     let userSetMode = false; // track if user manually chose a mode
     let selectedLayers = [];
     let savedInteractions = new Map(); // key: id, value: saved interaction data
+    let renderedLayerElementMap = new Map();
+    let currentFlowSourceId = null;
+    let layerFlowRenderFrame = null;
+    let layerFlowResizeObserver = null;
 
     // UI Elements
     const modeButtons = document.querySelectorAll('.mode-button');
@@ -5883,7 +6027,7 @@
     }
 
     // Format trigger names for display with color coding and icons
-    function formatTriggerName(trigger, includeHtml = true) {
+    function getTriggerDisplayData(trigger) {
       const triggerData = {
         'ON_CLICK': {
           name: 'On Click',
@@ -5932,7 +6076,16 @@
         }
       };
 
-      const data = triggerData[trigger];
+      return triggerData[trigger] || null;
+    }
+
+    function getInteractionAccentColor(trigger) {
+      const data = getTriggerDisplayData(trigger);
+      return data ? data.color : 'var(--figma-color-text-secondary)';
+    }
+
+    function formatTriggerName(trigger, includeHtml = true) {
+      const data = getTriggerDisplayData(trigger);
       if (!data) {
         return includeHtml ? `<span style="color: var(--figma-color-text-secondary)">${trigger}</span>` : trigger;
       }
@@ -6013,8 +6166,301 @@
       return layer.name;
     }
 
+    function formatActionTypeName(actionType) {
+      if (!actionType) return '';
+      return String(actionType)
+        .toLowerCase()
+        .split('_')
+        .map(part => part ? part.charAt(0).toUpperCase() + part.slice(1) : '')
+        .join(' ');
+    }
+
+    function getDirectionChipMeta(direction) {
+      const normalizedDirection = String(direction || '').toLowerCase();
+      const directionMap = {
+        above: { icon: '↑', label: 'Up' },
+        below: { icon: '↓', label: 'Down' },
+        left: { icon: '←', label: 'Left' },
+        right: { icon: '→', label: 'Right' }
+      };
+
+      return directionMap[normalizedDirection] || { icon: '↗', label: 'Target' };
+    }
+
+    function buildTargetChip(interaction, renderedLayerIds, selectedLayerIds, interactionIndex) {
+      const actionType = interaction.actionType || '';
+      const accentColor = getInteractionAccentColor(interaction.trigger);
+      const interactionIndexAttr = Number.isInteger(interactionIndex) ? ` data-interaction-index="${interactionIndex}"` : '';
+
+      if (actionType && actionType !== 'NODE') {
+        return `
+          <div class="interaction-target">
+            <span class="target-chip is-action"${interactionIndexAttr} style="--interaction-accent: ${escapeHtml(accentColor)};" title="${escapeHtml(formatActionTypeName(actionType))}">
+              <span class="target-chip-icon">•</span>
+              <span class="target-chip-label">${escapeHtml(formatActionTypeName(actionType))}</span>
+            </span>
+          </div>
+        `;
+      }
+
+      const directionMeta = getDirectionChipMeta(interaction.direction);
+      const targetLabel = interaction.targetName
+        ? formatVariantTargetName(interaction.targetName)
+        : 'Missing target';
+
+      let chipClass = 'is-broken';
+      let stateLabel = 'Broken';
+      let title = 'Broken or missing target';
+
+      if (interaction.targetId && interaction.targetName && renderedLayerIds.has(interaction.targetId)) {
+        chipClass = 'is-connectable';
+        stateLabel = directionMeta.label;
+        title = `${directionMeta.label} to ${targetLabel}`;
+      } else if (interaction.targetId && interaction.targetName && selectedLayerIds.has(interaction.targetId)) {
+        chipClass = 'is-off-list';
+        stateLabel = 'Hidden';
+        title = `${targetLabel} is currently hidden by filters`;
+      } else if (interaction.targetId && interaction.targetName) {
+        chipClass = 'is-off-list';
+        stateLabel = 'Off-list';
+        title = `${targetLabel} is outside the current layer list`;
+      } else if (interaction.targetId && !interaction.targetName) {
+        chipClass = 'is-broken';
+        stateLabel = 'Broken';
+        title = 'Broken link: target not found';
+      } else if (actionType === 'NODE') {
+        chipClass = 'is-broken';
+        stateLabel = 'Missing';
+        title = 'NODE action has no target';
+      }
+
+      return `
+        <div class="interaction-target">
+          <span class="target-chip ${chipClass}"${interactionIndexAttr} style="--interaction-accent: ${escapeHtml(accentColor)};" title="${escapeHtml(title)}">
+            <span class="target-chip-icon">${escapeHtml(directionMeta.icon)}</span>
+            <span class="target-chip-label">${escapeHtml(targetLabel)}</span>
+            <span class="target-chip-state">${escapeHtml(stateLabel)}</span>
+          </span>
+        </div>
+      `;
+    }
+
+    function renderInteractionRows(layer, renderedLayerIds, selectedLayerIds) {
+      if (!layer.interactions.length) {
+        return '<div class="interaction-empty">No interactions</div>';
+      }
+
+      return layer.interactions.map((interaction, index) => {
+        console.log(`Layer "${layer.name}" - Interaction ${index + 1}:`, {
+          trigger: interaction.trigger,
+          targetId: interaction.targetId,
+          targetName: interaction.targetName,
+          actionType: interaction.actionType,
+          direction: interaction.direction
+        });
+
+        let sourceIndicator = '';
+        if (interaction.source === 'component') {
+          sourceIndicator = '<span class="interaction-source-indicator">[Variant]</span>';
+        } else if (interaction.source === 'instance') {
+          sourceIndicator = '<span class="interaction-source-indicator">[Override]</span>';
+        }
+
+        const delayText = `${Math.round(interaction.delay * 1000)}ms`;
+        const targetChip = buildTargetChip(interaction, renderedLayerIds, selectedLayerIds, index);
+
+        let metaText = `${formatTriggerName(interaction.trigger)} • ${delayText}`;
+        if (interaction.animation === 'INSTANT' || interaction.duration === 0) {
+          metaText += ` • Instant${sourceIndicator ? ` ${sourceIndicator}` : ''}`;
+        } else {
+          metaText += ` • ${escapeHtml(formatAnimationName(interaction.animation))} • ${escapeHtml(formatCurveName(interaction.curve))} • ${Math.round(interaction.duration * 1000)}ms${sourceIndicator ? ` ${sourceIndicator}` : ''}`;
+        }
+
+        return `
+          <div class="interaction-row">
+            <div class="interaction-meta">${metaText}</div>
+            ${targetChip}
+          </div>
+        `;
+      }).join('');
+    }
+
+    function getLayerFlowOverlayEl() {
+      return layersContainer.querySelector('.layer-flow-overlay');
+    }
+
+    function resetLayerFlowHighlights() {
+      layersContainer.querySelectorAll('.layer-item.flow-source, .layer-item.flow-target').forEach(item => {
+        item.classList.remove('flow-source', 'flow-target');
+      });
+    }
+
+    function clearLayerFlow(resetSource = true) {
+      if (resetSource) {
+        currentFlowSourceId = null;
+      }
+      resetLayerFlowHighlights();
+      const overlay = getLayerFlowOverlayEl();
+      if (overlay) {
+        overlay.innerHTML = '';
+      }
+    }
+
+    function resetLayerFlowState() {
+      if (layerFlowRenderFrame !== null) {
+        cancelAnimationFrame(layerFlowRenderFrame);
+        layerFlowRenderFrame = null;
+      }
+      if (layerFlowResizeObserver) {
+        layerFlowResizeObserver.disconnect();
+        layerFlowResizeObserver = null;
+      }
+      renderedLayerElementMap = new Map();
+      clearLayerFlow();
+    }
+
+    function syncLayerFlowOverlaySize() {
+      const overlay = getLayerFlowOverlayEl();
+      if (!overlay) return;
+
+      const width = Math.max(layersContainer.clientWidth, layersContainer.scrollWidth);
+      const height = Math.max(layersContainer.clientHeight, layersContainer.scrollHeight);
+
+      overlay.setAttribute('width', String(width));
+      overlay.setAttribute('height', String(height));
+      overlay.setAttribute('viewBox', `0 0 ${width} ${height}`);
+      overlay.style.width = `${width}px`;
+      overlay.style.height = `${height}px`;
+    }
+
+    function getRenderedFlowConnections(layerId) {
+      const layer = selectedLayers.find(candidate => candidate.id === layerId);
+      const sourceElement = renderedLayerElementMap.get(layerId);
+      if (!layer || !sourceElement) return [];
+
+      return layer.interactions
+        .map((interaction, interactionIndex) => ({ interaction, interactionIndex }))
+        .filter(({ interaction }) => interaction.actionType === 'NODE' && interaction.targetId && renderedLayerElementMap.has(interaction.targetId))
+        .map(({ interaction, interactionIndex }, index) => ({
+          interaction,
+          index,
+          interactionIndex,
+          sourceElement,
+          sourceChipElement: sourceElement.querySelector(`.target-chip[data-interaction-index="${interactionIndex}"]`),
+          targetElement: renderedLayerElementMap.get(interaction.targetId),
+          targetId: interaction.targetId,
+          accentColor: getInteractionAccentColor(interaction.trigger)
+        }));
+    }
+
+    function applyLayerFlowHighlights(layerId) {
+      resetLayerFlowHighlights();
+      const sourceElement = renderedLayerElementMap.get(layerId);
+      if (!sourceElement) return;
+
+      sourceElement.classList.add('flow-source');
+      const visibleTargets = new Set(getRenderedFlowConnections(layerId).map(connection => connection.targetId));
+      visibleTargets.forEach(targetId => {
+        const targetElement = renderedLayerElementMap.get(targetId);
+        if (targetElement) {
+          targetElement.classList.add('flow-target');
+        }
+      });
+    }
+
+    function renderLayerFlowOverlay() {
+      layerFlowRenderFrame = null;
+      syncLayerFlowOverlaySize();
+
+      const overlay = getLayerFlowOverlayEl();
+      if (!overlay) return;
+      if (!currentFlowSourceId) {
+        overlay.innerHTML = '';
+        return;
+      }
+
+      const sourceElement = renderedLayerElementMap.get(currentFlowSourceId);
+      if (!sourceElement) {
+        clearLayerFlow();
+        return;
+      }
+
+      const connections = getRenderedFlowConnections(currentFlowSourceId);
+      if (!connections.length) {
+        overlay.innerHTML = '';
+        return;
+      }
+
+      const containerRect = layersContainer.getBoundingClientRect();
+      const paths = connections.map((connection, connectionIndex) => {
+        const sourceRect = connection.sourceElement.getBoundingClientRect();
+        const sourceChipRect = connection.sourceChipElement ? connection.sourceChipElement.getBoundingClientRect() : sourceRect;
+        const targetRect = connection.targetElement.getBoundingClientRect();
+        const startX = sourceChipRect.left - containerRect.left + layersContainer.scrollLeft + 1;
+        const startYOffset = (connectionIndex - (connections.length - 1) / 2) * 2;
+        const startY = sourceChipRect.top - containerRect.top + layersContainer.scrollTop + (sourceChipRect.height / 2) + startYOffset;
+        const endX = targetRect.left - containerRect.left + layersContainer.scrollLeft + 7;
+        const endY = targetRect.top - containerRect.top + layersContainer.scrollTop + (targetRect.height / 2);
+        const laneX = Math.max(6, Math.min(startX, endX) - 24 - (connectionIndex * 8));
+        const startControlX = laneX;
+        const endControlX = laneX - 6;
+        const pathData = `M ${startX} ${startY} C ${startControlX} ${startY}, ${endControlX} ${endY}, ${endX} ${endY}`;
+
+        return `
+          <path class="layer-flow-path" d="${pathData}" style="stroke: ${escapeHtml(connection.accentColor)};" />
+          <circle class="layer-flow-source-dot" cx="${startX}" cy="${startY}" r="3.4" style="stroke: ${escapeHtml(connection.accentColor)};" />
+          <circle class="layer-flow-dot" cx="${endX}" cy="${endY}" r="2.5" style="fill: ${escapeHtml(connection.accentColor)};" />
+        `;
+      }).join('');
+
+      overlay.innerHTML = paths;
+    }
+
+    function scheduleLayerFlowOverlayRender() {
+      if (layerFlowRenderFrame !== null) return;
+      layerFlowRenderFrame = requestAnimationFrame(renderLayerFlowOverlay);
+    }
+
+    function bindLayerFlowInteractions() {
+      renderedLayerElementMap = new Map();
+      const layerItems = layersContainer.querySelectorAll('.layer-item');
+      if (typeof ResizeObserver !== 'undefined') {
+        layerFlowResizeObserver = new ResizeObserver(() => {
+          if (currentFlowSourceId) {
+            scheduleLayerFlowOverlayRender();
+          }
+        });
+      }
+
+      layerItems.forEach(item => {
+        const layerId = item.getAttribute('data-layer-id');
+        if (!layerId) return;
+
+        renderedLayerElementMap.set(layerId, item);
+        if (layerFlowResizeObserver) {
+          layerFlowResizeObserver.observe(item);
+        }
+        item.addEventListener('mouseenter', () => {
+          currentFlowSourceId = layerId;
+          applyLayerFlowHighlights(layerId);
+          scheduleLayerFlowOverlayRender();
+        });
+        item.addEventListener('mouseleave', (event) => {
+          const relatedTarget = event.relatedTarget;
+          if (relatedTarget && item.contains(relatedTarget)) return;
+          if (currentFlowSourceId === layerId) {
+            clearLayerFlow();
+          }
+        });
+      });
+
+      syncLayerFlowOverlaySize();
+    }
+
     // Render layers list
     function renderLayers() {
+      resetLayerFlowState();
+
       if (selectedLayers.length === 0) {
         layersContainer.innerHTML = `
           <div class="no-layers">
@@ -6056,6 +6502,8 @@
       const filteredLayers = hideNoInteractions
         ? selectedLayers.filter(layer => layer.interactions.length > 0)
         : selectedLayers;
+      const renderedLayerIds = new Set(filteredLayers.map(layer => layer.id));
+      const selectedLayerIds = new Set(selectedLayers.map(layer => layer.id));
 
       // If all layers are filtered out, show faded state
       if (filteredLayers.length === 0) {
@@ -6086,41 +6534,8 @@
         return;
       }
 
-      layersContainer.innerHTML = filteredLayers.map(layer => {
-        const interactionInfo = layer.interactions.length > 0
-          ? layer.interactions.map((interaction, index) => {
-            console.log(`Layer "${layer.name}" - Interaction ${index + 1}:`, {
-              trigger: interaction.trigger,
-              targetId: interaction.targetId,
-              targetName: interaction.targetName,
-              actionType: interaction.actionType,
-              direction: interaction.direction
-            });
-
-            let targetInfo = '';
-            if (interaction.targetName) {
-              targetInfo = `<span class="target-info">→ ${formatVariantTargetName(interaction.targetName)}</span>`;
-            } else if (interaction.actionType) {
-              targetInfo = `<span class="target-info">→ ${interaction.actionType}</span>`;
-            }
-
-            // Add source indicator
-            let sourceIndicator = '';
-            if (interaction.source === 'component') {
-              sourceIndicator = '<span style="color: var(--figma-color-text-secondary); font-size: 9px; opacity: 0.7;"> [Variant]</span>';
-            } else if (interaction.source === 'instance') {
-              sourceIndicator = '<span style="color: var(--figma-color-text-secondary); font-size: 9px; opacity: 0.7;"> [Override]</span>';
-            }
-
-            // For instant animations, show simplified format
-            if (interaction.animation === 'INSTANT' || interaction.duration === 0) {
-              return `${formatTriggerName(interaction.trigger)} • ${Math.round(interaction.delay * 1000)}ms • Instant${sourceIndicator}${targetInfo ? '<br>' + targetInfo : ''}`;
-            }
-
-            return `${formatTriggerName(interaction.trigger)} • ${Math.round(interaction.delay * 1000)}ms • ${formatAnimationName(interaction.animation)} • ${formatCurveName(interaction.curve)} • ${Math.round(interaction.duration * 1000)}ms${sourceIndicator}${targetInfo ? '<br>' + targetInfo : ''}`;
-          }).join('<br>')
-          : 'No interactions';
-
+      const listMarkup = filteredLayers.map(layer => {
+        const interactionInfo = renderInteractionRows(layer, renderedLayerIds, selectedLayerIds);
         const hasInteractions = layer.interactions.length > 0;
         const saveButtonHtml = hasInteractions
           ? `<button class="save-interaction-btn" onclick="saveInteraction('${layer.id}')" title="Save this interaction">
@@ -6183,6 +6598,13 @@
           </div>
         `;
       }).join('');
+
+      layersContainer.innerHTML = `
+        <svg class="layer-flow-overlay" aria-hidden="true"></svg>
+        <div class="layers-list-content">${listMarkup}</div>
+      `;
+
+      bindLayerFlowInteractions();
 
       renderSavedInteractions(); // Render saved interactions after layers
 
@@ -6356,6 +6778,20 @@
         renderLayers(); // Re-render layers with the new filter
       });
     }
+
+    layersContainer.addEventListener('scroll', () => {
+      if (currentFlowSourceId) {
+        scheduleLayerFlowOverlayRender();
+      }
+    });
+
+    window.addEventListener('resize', () => {
+      if (currentFlowSourceId) {
+        scheduleLayerFlowOverlayRender();
+      } else {
+        syncLayerFlowOverlaySize();
+      }
+    });
 
     // Save interaction from a layer
     function saveInteraction(layerId) {
