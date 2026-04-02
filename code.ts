@@ -363,6 +363,51 @@ type NodeWithVariants = SceneNode & {
   componentPropertyDefinitions?: ComponentPropertyDefinitions;
 };
 
+function parseVariantPropertiesFromName(name: string): VariantProperties | null {
+  if (!name || !name.includes('=')) return null;
+
+  const parsed: VariantProperties = {};
+
+  name.split(',').forEach((part) => {
+    const separatorIndex = part.indexOf('=');
+    if (separatorIndex === -1) return;
+
+    const key = part.slice(0, separatorIndex).trim();
+    const value = part.slice(separatorIndex + 1).trim();
+
+    if (!key || !value) return;
+    parsed[key] = value;
+  });
+
+  return Object.keys(parsed).length > 0 ? parsed : null;
+}
+
+function safeGetVariantProperties(node: SceneNode): VariantProperties | null {
+  try {
+    const props = (node as NodeWithVariants).variantProperties;
+    if (props && typeof props === 'object') {
+      return { ...props };
+    }
+  } catch (error) {
+    console.warn(`[PLUGIN] Could not read variantProperties for "${node.name}" (${node.id})`, error);
+  }
+
+  return parseVariantPropertiesFromName(node.name);
+}
+
+function safeGetComponentPropertyDefinitions(node: SceneNode): ComponentPropertyDefinitions | null {
+  try {
+    const definitions = (node as NodeWithVariants).componentPropertyDefinitions;
+    if (definitions && typeof definitions === 'object') {
+      return { ...definitions };
+    }
+  } catch (error) {
+    console.warn(`[PLUGIN] Could not read componentPropertyDefinitions for "${node.name}" (${node.id})`, error);
+  }
+
+  return null;
+}
+
 // Helpers for variant auto-detection (CHANGE_TO)
 function getComponentSetParent(node: ComponentNode | null): ComponentSetNode | null {
   if (!node) return null;
@@ -395,8 +440,7 @@ function areSameComponentSet(a: ComponentNode | null, b: ComponentNode | null): 
 
 function nodeMatchesVariantFilterByString(node: SceneNode, variantFilter: string[]): boolean {
   if (!variantFilter || variantFilter.length === 0) return true;
-  const variantNode = node as NodeWithVariants;
-  const props = variantNode.variantProperties;
+  const props = safeGetVariantProperties(node);
   if (!props) return false;
   return variantFilter.some(filter => {
     const [propName, propValue] = filter.split(':');
@@ -421,8 +465,7 @@ function parseVariantFiltersToMap(filters: string[] | undefined): Map<string, Se
 
 // Check node variantProperties satisfy ALL properties in map (AND across properties)
 function nodeMatchesVariantMap(node: SceneNode, variantMap: Map<string, Set<string>>): boolean {
-  const variantNode = node as NodeWithVariants;
-  const props = variantNode.variantProperties;
+  const props = safeGetVariantProperties(node);
   if (!props) return false;
   for (const [prop, values] of variantMap.entries()) {
     const nodeVal = props[prop];
@@ -465,8 +508,7 @@ function getPairingProperties(fromMap: Map<string, Set<string>>, toMap: Map<stri
 }
 
 function buildVariantKeyForNode(node: SceneNode, props: string[]): string {
-  const variantNode = node as NodeWithVariants;
-  const vp = variantNode.variantProperties || {};
+  const vp = safeGetVariantProperties(node) || {};
   return props.map(p => `${p}=${vp[p] || ''}`).join('|');
 }
 
@@ -491,7 +533,7 @@ function getUpdateTargetsForNode(node: SceneNode, variantFilter?: string[]): Arr
   // For nodes without variant properties (like FRAME), skip variant filter check
   const target = getReactionTargetNode(node);
   if (target) {
-    const hasVariantProperties = 'variantProperties' in node && (node as NodeWithVariants).variantProperties;
+    const hasVariantProperties = !!safeGetVariantProperties(node);
     if (!variantFilter || !hasVariantProperties || nodeMatchesVariantFilterByString(node, variantFilter)) {
       targets.push(target);
     }
@@ -514,21 +556,21 @@ function filterNodes(nodes: SceneNode[], nodeFilter?: string[], variantFilter?: 
     // Variant property filtering
     if (variantFilter && variantFilter.length > 0) {
       // Check if node has variant properties
-      const variantNode = node as NodeWithVariants;
-      if (variantNode.variantProperties) {
+      const variantProperties = safeGetVariantProperties(node);
+      if (variantProperties) {
         return variantFilter.some(filter => {
           const [propName, propValue] = filter.split(':');
-          return variantNode.variantProperties![propName] === propValue;
+          return variantProperties[propName] === propValue;
         });
       }
 
       // Check if it's a component set with matching properties
       if (node.type === 'COMPONENT_SET') {
-        const componentSet = node as ComponentSetNode & NodeWithVariants;
-        if (componentSet.componentPropertyDefinitions) {
+        const componentPropertyDefinitions = safeGetComponentPropertyDefinitions(node);
+        if (componentPropertyDefinitions) {
           return variantFilter.some(filter => {
             const [propName, propValue] = filter.split(':');
-            const propDef = componentSet.componentPropertyDefinitions![propName];
+            const propDef = componentPropertyDefinitions[propName];
             return propDef && propDef.type === 'VARIANT' && propDef.variantOptions?.includes(propValue);
           });
         }
@@ -861,59 +903,75 @@ async function appendInteractionBetweenNodes(
 // Send selected layers info to UI
 async function sendLayersToUI() {
   const supportedLayers: LayerInfo[] = [];
+  const buildLayerInfo = async (node: SceneNode): Promise<LayerInfo> => {
+    let interactions: LayerInfo['interactions'] = [];
 
-  // Use persisted selection ordering
-  const supportedNodes = getOrderedSupportedSelection();
+    try {
+      interactions = await getNodeInteractions(node);
+    } catch (error) {
+      console.error(`[PLUGIN] Failed to read interactions for "${node.name}" (${node.id})`, error);
+    }
 
-  // Create layers array with explicit ordering
-  for (const node of supportedNodes) {
-    // If a component set is selected, expand to its variant COMPONENT children in the Selected Layers list
-    if (node.type === 'COMPONENT_SET') {
-      const set = node as ComponentSetNode;
-      const children = set.children.filter((c): c is ComponentNode => c.type === 'COMPONENT');
-      for (const child of children) {
-        const interactions = await getNodeInteractions(child as unknown as SceneNode);
-        const childInfo: LayerInfo = {
-          id: child.id,
-          name: child.name,
-          type: child.type,
-          interactions: interactions,
-          variantProperties: (child as NodeWithVariants).variantProperties || null
+    const layerInfo: LayerInfo = {
+      id: node.id,
+      name: node.name,
+      type: node.type,
+      interactions
+    };
+
+    const variantProperties = safeGetVariantProperties(node);
+    if (variantProperties) {
+      layerInfo.variantProperties = variantProperties;
+    }
+
+    const componentPropertyDefinitions = safeGetComponentPropertyDefinitions(node);
+    if (componentPropertyDefinitions) {
+      layerInfo.componentPropertyDefinitions = componentPropertyDefinitions;
+    }
+
+    return layerInfo;
+  };
+
+  try {
+    // Use persisted selection ordering
+    const supportedNodes = getOrderedSupportedSelection();
+
+    // Create layers array with explicit ordering
+    for (const node of supportedNodes) {
+      // If a component set is selected, expand to its variant COMPONENT children in the Selected Layers list
+      if (node.type === 'COMPONENT_SET') {
+        const set = node as ComponentSetNode;
+        const children = set.children.filter((c): c is ComponentNode => c.type === 'COMPONENT');
+
+        if (children.length === 0) {
+          supportedLayers.push(await buildLayerInfo(node));
+          continue;
+        }
+
+        for (const child of children) {
+          supportedLayers.push(await buildLayerInfo(child as unknown as SceneNode));
+        }
+      } else {
+        supportedLayers.push(await buildLayerInfo(node));
+      }
+    }
+
+    // Also include selected Sections (for UI visibility and remove button state)
+    const rawSelection = figma.currentPage.selection as SceneNode[];
+    rawSelection.forEach((node) => {
+      if (node.type === 'SECTION' || node.type === 'GROUP') {
+        const layerInfo: LayerInfo = {
+          id: node.id,
+          name: node.name,
+          type: node.type,
+          interactions: []
         };
-        supportedLayers.push(childInfo);
+        supportedLayers.push(layerInfo);
       }
-    } else {
-      const interactions = await getNodeInteractions(node);
-      const layerInfo: LayerInfo = {
-        id: node.id,
-        name: node.name,
-        type: node.type,
-        interactions: interactions
-      };
-
-      // Add variant properties if available
-      const variantNode = node as NodeWithVariants;
-      if (variantNode.variantProperties) {
-        layerInfo.variantProperties = variantNode.variantProperties;
-      }
-
-      supportedLayers.push(layerInfo);
-    }
+    });
+  } catch (error) {
+    console.error('[PLUGIN] Failed while preparing selection data for UI', error);
   }
-
-  // Also include selected Sections (for UI visibility and remove button state)
-  const rawSelection = figma.currentPage.selection as SceneNode[];
-  rawSelection.forEach((node) => {
-    if (node.type === 'SECTION' || node.type === 'GROUP') {
-      const layerInfo: LayerInfo = {
-        id: node.id,
-        name: node.name,
-        type: node.type,
-        interactions: []
-      };
-      supportedLayers.push(layerInfo);
-    }
-  });
 
   figma.ui.postMessage({
     type: 'selection-changed',
@@ -2125,18 +2183,18 @@ async function applyInteractions(
           // Collect all values of this property from selection to include all combinations
           const allValues = new Set<string>();
           supportedNodes.forEach(node => {
-            const variantNode = node as NodeWithVariants;
-            if (variantNode.variantProperties && variantNode.variantProperties[property]) {
-              allValues.add(variantNode.variantProperties[property]);
+            const variantProperties = safeGetVariantProperties(node);
+            if (variantProperties && variantProperties[property]) {
+              allValues.add(variantProperties[property]);
             }
             // Handle component sets
             if (node.type === 'COMPONENT_SET') {
               const set = node as ComponentSetNode;
               set.children.forEach(child => {
                 if (child.type === 'COMPONENT') {
-                  const childVariant = child as NodeWithVariants;
-                  if (childVariant.variantProperties && childVariant.variantProperties[property]) {
-                    allValues.add(childVariant.variantProperties[property]);
+                  const childVariantProperties = safeGetVariantProperties(child as SceneNode);
+                  if (childVariantProperties && childVariantProperties[property]) {
+                    allValues.add(childVariantProperties[property]);
                   }
                 }
               });
@@ -2175,14 +2233,14 @@ async function applyInteractions(
 
         console.log('  Matched From nodes:');
         fromNodes.forEach((n, idx) => {
-          const variantNode = n as NodeWithVariants;
-          const vp = variantNode.variantProperties ? JSON.stringify(variantNode.variantProperties) : 'none';
+          const variantProperties = safeGetVariantProperties(n);
+          const vp = variantProperties ? JSON.stringify(variantProperties) : 'none';
           console.log(`    ${idx + 1}. ${n.name} (id: ${n.id}) • variants=${vp}`);
         });
         console.log('  Matched To nodes:');
         toNodes.forEach((n, idx) => {
-          const variantNode = n as NodeWithVariants;
-          const vp = variantNode.variantProperties ? JSON.stringify(variantNode.variantProperties) : 'none';
+          const variantProperties = safeGetVariantProperties(n);
+          const vp = variantProperties ? JSON.stringify(variantProperties) : 'none';
           console.log(`    ${idx + 1}. ${n.name} (id: ${n.id}) • variants=${vp}`);
         });
 
