@@ -111,7 +111,15 @@ interface PropertyMappingConfig {
 }
 
 interface PositionConfig {
-  direction: 'top-to-bottom' | 'top-to-bottom-and-back' | 'bottom-to-top' | 'left-to-right' | 'left-to-right-and-back' | 'right-to-left';
+  direction:
+    | 'left-to-right'
+    | 'top-to-bottom'
+    | 'chain-left-to-right'
+    | 'chain-top-to-bottom'
+    | 'top-to-bottom-and-back'
+    | 'bottom-to-top'
+    | 'left-to-right-and-back'
+    | 'right-to-left';
   everyN: number;
   skip?: number;
 }
@@ -840,8 +848,38 @@ function isBidirectionalPositionDirection(direction: string): boolean {
 function getBasePositionDirection(direction: string): 'top-to-bottom' | 'bottom-to-top' | 'left-to-right' | 'right-to-left' {
   if (direction === 'top-to-bottom-and-back') return 'top-to-bottom';
   if (direction === 'left-to-right-and-back') return 'left-to-right';
+  if (direction === 'chain-left-to-right') return 'left-to-right';
+  if (direction === 'chain-top-to-bottom') return 'top-to-bottom';
   if (direction === 'bottom-to-top' || direction === 'right-to-left') return direction;
   return direction === 'left-to-right' ? 'left-to-right' : 'top-to-bottom';
+}
+
+/** Normalize By Position dropdown + reverse/bidirectional into sort axis, chain vs per-row/column grouping, and pair mirroring */
+function resolvePositionFlow(
+  positionConfig: PositionConfig,
+  orderReverse?: boolean,
+  orderBidirectional?: boolean
+): { sortDirection: 'top-to-bottom' | 'bottom-to-top' | 'left-to-right' | 'right-to-left'; chainAcrossGroups: boolean; pairBidirectional: boolean } {
+  const raw = positionConfig.direction;
+  const pairBidirectional = !!orderBidirectional || isBidirectionalPositionDirection(raw);
+  const chainAcrossGroups = raw === 'chain-left-to-right' || raw === 'chain-top-to-bottom';
+
+  let sortDirection: 'top-to-bottom' | 'bottom-to-top' | 'left-to-right' | 'right-to-left';
+
+  const reverse = !!orderReverse;
+  if (raw === 'chain-left-to-right' || raw === 'left-to-right' || raw === 'left-to-right-and-back') {
+    sortDirection = reverse ? 'right-to-left' : 'left-to-right';
+  } else if (raw === 'chain-top-to-bottom' || raw === 'top-to-bottom' || raw === 'top-to-bottom-and-back') {
+    sortDirection = reverse ? 'bottom-to-top' : 'top-to-bottom';
+  } else if (raw === 'right-to-left') {
+    sortDirection = reverse ? 'left-to-right' : 'right-to-left';
+  } else if (raw === 'bottom-to-top') {
+    sortDirection = reverse ? 'top-to-bottom' : 'bottom-to-top';
+  } else {
+    sortDirection = reverse ? 'right-to-left' : 'left-to-right';
+  }
+
+  return { sortDirection, chainAcrossGroups, pairBidirectional };
 }
 
 async function appendInteractionBetweenNodes(
@@ -1106,11 +1144,140 @@ function sortNodesByPosition(nodes: SceneNode[], direction: string): SceneNode[]
   return result;
 }
 
+/** Sort full-chain modes in spatial reading order, independent of layer stack order. */
+function sortNodesForFullChainByPosition(nodes: SceneNode[], direction: string): SceneNode[] {
+  const baseDirection = getBasePositionDirection(direction);
+  const expandedNodes: SceneNode[] = [];
+  nodes.forEach((node: SceneNode) => {
+    if (node.type === 'COMPONENT_SET') {
+      const componentSetNode = node as ComponentSetNode;
+      componentSetNode.children.forEach((child: SceneNode) => {
+        if (child.type === 'COMPONENT') {
+          expandedNodes.push(child);
+        }
+      });
+    } else {
+      expandedNodes.push(node);
+    }
+  });
+
+  type Positioned = {
+    node: SceneNode;
+    index: number;
+    x: number;
+    y: number;
+    cx: number;
+    cy: number;
+    w: number;
+    h: number;
+  };
+
+  const items: Positioned[] = expandedNodes.map((n, index) => {
+    if (!hasLayout(n)) {
+      return { node: n, index, x: 0, y: 0, cx: 0, cy: 0, w: 0, h: 0 };
+    }
+    const t = n.absoluteTransform;
+    const x = t ? t[0][2] : n.x;
+    const y = t ? t[1][2] : n.y;
+    const w = n.width || 0;
+    const h = n.height || 0;
+    return {
+      node: n,
+      index,
+      x,
+      y,
+      cx: x + w / 2,
+      cy: y + h / 2,
+      w,
+      h,
+    };
+  });
+
+  type AxisKey = 'cx' | 'cy';
+  const isVerticalChain = baseDirection === 'top-to-bottom' || baseDirection === 'bottom-to-top';
+  const groupingKey: AxisKey = isVerticalChain ? 'cx' : 'cy';
+  const traverseKey: AxisKey = isVerticalChain ? 'cy' : 'cx';
+  const groupingSizeKey: 'w' | 'h' = isVerticalChain ? 'w' : 'h';
+  const groupsAscending = true;
+  const withinAscending = baseDirection === 'top-to-bottom' || baseDirection === 'left-to-right';
+
+  const sizes = items.map((it) => it[groupingSizeKey]).filter((s) => s > 0);
+  const median = (() => {
+    if (sizes.length === 0) return 0;
+    const sorted = sizes.slice().sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+  })();
+  const tolerance = Math.max(4, median * 0.6);
+
+  const sortedByGroup = items.slice().sort((a, b) => {
+    const groupDelta = a[groupingKey] - b[groupingKey];
+    if (Math.abs(groupDelta) > 0.001) return groupDelta;
+    const traverseDelta = a[traverseKey] - b[traverseKey];
+    if (Math.abs(traverseDelta) > 0.001) return traverseDelta;
+    return a.index - b.index;
+  });
+
+  const groups: Positioned[][] = [];
+  let currentGroup: Positioned[] = [];
+  let groupBaseline = Number.NEGATIVE_INFINITY;
+
+  for (const it of sortedByGroup) {
+    if (currentGroup.length === 0) {
+      currentGroup.push(it);
+      groupBaseline = it[groupingKey];
+    } else if (Math.abs(it[groupingKey] - groupBaseline) <= tolerance) {
+      currentGroup.push(it);
+      groupBaseline = currentGroup.reduce((sum, item) => sum + item[groupingKey], 0) / currentGroup.length;
+    } else {
+      groups.push(currentGroup);
+      currentGroup = [it];
+      groupBaseline = it[groupingKey];
+    }
+  }
+  if (currentGroup.length > 0) groups.push(currentGroup);
+
+  groups.sort((a, b) => {
+    const aBaseline = a.reduce((sum, item) => sum + item[groupingKey], 0) / a.length;
+    const bBaseline = b.reduce((sum, item) => sum + item[groupingKey], 0) / b.length;
+    const delta = aBaseline - bBaseline;
+    return groupsAscending ? delta : -delta;
+  });
+
+  groups.forEach((group) => {
+    group.sort((a, b) => {
+      const traverseDelta = a[traverseKey] - b[traverseKey];
+      if (Math.abs(traverseDelta) > 0.001) {
+        return withinAscending ? traverseDelta : -traverseDelta;
+      }
+      const groupDelta = a[groupingKey] - b[groupingKey];
+      if (Math.abs(groupDelta) > 0.001) return groupDelta;
+      return a.index - b.index;
+    });
+  });
+
+  const result: SceneNode[] = [];
+  for (const group of groups) {
+    for (const item of group) {
+      result.push(item.node);
+    }
+  }
+  return result;
+}
+
 // Helper function to create position-based pairs with group chain logic
-function createPositionPairs(nodes: SceneNode[], groupSize: number, direction: string, skip: number = 0): Array<{ from: SceneNode, to: SceneNode }> {
+function createPositionPairs(
+  nodes: SceneNode[],
+  groupSize: number,
+  direction: string,
+  skip: number = 0,
+  explicitBidirectional?: boolean
+): Array<{ from: SceneNode, to: SceneNode }> {
   const pairs: Array<{ from: SceneNode, to: SceneNode }> = [];
   const baseDirection = getBasePositionDirection(direction);
-  const isBidirectional = isBidirectionalPositionDirection(direction);
+  const isBidirectional = typeof explicitBidirectional === 'boolean'
+    ? explicitBidirectional
+    : isBidirectionalPositionDirection(direction);
 
   // Recompute positions to detect grouping boundaries (rows/columns) identical to sorting logic
   type Positioned = {
@@ -1213,6 +1380,24 @@ function createPositionPairs(nodes: SceneNode[], groupSize: number, direction: s
     }
   }
 
+  return pairs;
+}
+
+/** Full adjacent chain: each node connects to its neighbor in sort order (no Every N / Skip gaps). */
+function createFullChainPositionPairs(
+  nodes: SceneNode[],
+  bidirectional: boolean,
+  reversePairDirection: boolean = false
+): Array<{ from: SceneNode, to: SceneNode }> {
+  const pairs: Array<{ from: SceneNode, to: SceneNode }> = [];
+  for (let i = 0; i < nodes.length - 1; i++) {
+    const forward = { from: nodes[i], to: nodes[i + 1] };
+    const reverse = { from: nodes[i + 1], to: nodes[i] };
+    pairs.push(reversePairDirection ? reverse : forward);
+    if (bidirectional) {
+      pairs.push(reversePairDirection ? forward : reverse);
+    }
+  }
   return pairs;
 }
 
@@ -2369,16 +2554,38 @@ async function applyInteractions(
           return false;
         }
       } else {
-        // Check if we have position configuration for By Position mode
-        if (positionConfig) {
-          console.log('[PLUGIN] Using position-based interaction creation');
-          supportedNodes = sortNodesByPosition(supportedNodes, positionConfig.direction);
+        let positionPairs: Array<{ from: SceneNode, to: SceneNode }> | null = null;
 
-          console.log('Creating add mode interactions by position with direction:', positionConfig.direction, 'group size:', positionConfig.everyN);
-          const pairs = createPositionPairs(supportedNodes, positionConfig.everyN, positionConfig.direction, positionConfig.skip || 0);
-          for (const pair of pairs) {
-            console.log(`  ${pair.from.name} (id: ${pair.from.id}) → ${pair.to.name} (id: ${pair.to.id})`);
-          }
+        if (positionConfig) {
+          const flow = resolvePositionFlow(positionConfig, orderReverse, orderBidirectional);
+          const chainSortDirection = getBasePositionDirection(positionConfig.direction);
+          console.log('[PLUGIN] Using position-based interaction creation', {
+            sortDirection: flow.sortDirection,
+            chainAcrossGroups: flow.chainAcrossGroups,
+            pairBidirectional: flow.pairBidirectional,
+            ...(flow.chainAcrossGroups
+              ? { chainMode: 'full-adjacent', chainSortDirection, reversePairDirection: !!orderReverse }
+              : { everyN: positionConfig.everyN, skip: positionConfig.skip })
+          });
+
+          positionPairs = flow.chainAcrossGroups
+            ? createFullChainPositionPairs(
+              sortNodesForFullChainByPosition(supportedNodes, chainSortDirection),
+              flow.pairBidirectional,
+              !!orderReverse
+            )
+            : createPositionPairs(
+              sortNodesByPosition(supportedNodes, flow.sortDirection),
+              positionConfig.everyN,
+              flow.sortDirection,
+              positionConfig.skip || 0,
+              flow.pairBidirectional
+            );
+
+          console.log('Creating add mode interactions by position (pairs)');
+          positionPairs.forEach((pair, idx) => {
+            console.log(`  ${idx + 1}. ${pair.from.name} (id: ${pair.from.id}) → ${pair.to.name} (id: ${pair.to.id})`);
+          });
         } else {
           console.log('[PLUGIN] Using selection-order chaining');
           console.log('[PLUGIN] orderMode:', orderMode, 'orderReverse:', orderReverse, 'orderBidirectional:', orderBidirectional);
@@ -2431,11 +2638,8 @@ async function applyInteractions(
         }
         console.log('=== END INTERACTION CREATION DEBUG ===');
 
-        // Handle position-based pairs if using position config
-        if (positionConfig) {
-          const pairs = createPositionPairs(supportedNodes, positionConfig.everyN, positionConfig.direction, positionConfig.skip || 0);
-
-          for (const pair of pairs) {
+        if (positionPairs !== null && positionPairs.length > 0) {
+          for (const pair of positionPairs) {
             const trigger = createTrigger(settings.trigger, settings.delay);
             const bezierValues = settings.curve === 'CUSTOM_BEZIER' ? {
               x1: settings.bezierX1 || 0.25,
@@ -2462,6 +2666,13 @@ async function applyInteractions(
               console.log('[PLUGIN] Skipping position pair: could not resolve source or target for', pair.from.name, '→', pair.to.name);
             }
           }
+        } else if (positionPairs !== null && positionPairs.length === 0) {
+          figma.ui.postMessage({
+            type: 'error',
+            message: 'No position-based pairs could be created. Adjust Every N / Skip or add more layers.'
+          });
+          console.warn('[PLUGIN] No pairs in By Position mode.');
+          return false;
         } else {
           // Original selection-order logic with step incremental support
           // Sort nodes for step incremental if needed

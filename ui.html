@@ -592,6 +592,11 @@
       align-items: center;
     }
 
+    #position-every-skip-row.is-disabled {
+      opacity: 0.45;
+      pointer-events: none;
+    }
+
     .bezier-input-container {
       display: flex;
       gap: 8px;
@@ -2152,51 +2157,53 @@
 
           <div id="property-mapping-container" style="display: none;">
 
-            <!-- By Order mode: ordering controls -->
-            <div id="order-mapping" class="mapping-mode-content" style="display: none;">
-              <div class="form-row order-controls-row">
-                <div class="form-group col-2">
-                  <label class="form-label">Order</label>
-                  <select id="order-mode" class="form-select">
-                    <option value="selection">By selection order</option>
-                    <option value="layer">By layer list order</option>
-                  </select>
+            <!-- Shared top row: order OR direction + reverse/bidirectional (By Order / By Position only) -->
+            <div id="mapping-top-row" class="form-row order-controls-row" style="display: none;">
+              <div style="min-width: 0;">
+                <div id="order-mapping" class="mapping-mode-content" style="display: none;">
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <label class="form-label">Order</label>
+                    <select id="order-mode" class="form-select">
+                      <option value="selection">By selection order</option>
+                      <option value="layer">By layer list order</option>
+                    </select>
+                  </div>
                 </div>
-                <div class="form-group col-1" style="align-self: end;">
-                  <label class="form-label">&nbsp;</label>
-                  <button type="button" id="order-reverse-btn" class="icon-btn" title="Toggle reverse order">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24">
-                      <path id="order-reverse-icon" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"
-                        stroke-width="2" d="M12 5v14m-4-4l4 4 4-4" />
-                    </svg>
-                  </button>
+                <div id="position-direction-group" class="mapping-mode-content" style="display: none;">
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <label class="form-label">Direction</label>
+                    <select id="position-direction" class="form-select">
+                      <option value="left-to-right">Left to Right</option>
+                      <option value="top-to-bottom">Top to Bottom</option>
+                      <option value="chain-left-to-right">Chain Left to Right</option>
+                      <option value="chain-top-to-bottom">Chain Top to Bottom</option>
+                    </select>
+                  </div>
                 </div>
-                <div class="form-group col-1" style="align-self: end;">
-                  <label class="form-label">&nbsp;</label>
-                  <button type="button" id="order-bidirectional-btn" class="icon-btn" title="Toggle bidirectional order">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24">
-                      <path id="order-bidirectional-icon" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"
-                        stroke-width="2" d="M7 8h10m0 0-3-3m3 3-3 3M17 16H7m0 0 3-3m-3 3 3 3" />
-                    </svg>
-                  </button>
-                </div>
+              </div>
+              <div class="form-group col-1" style="margin-bottom: 0;">
+                <label class="form-label">&nbsp;</label>
+                <button type="button" id="order-reverse-btn" class="icon-btn" title="Toggle reverse order">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24">
+                    <path id="order-reverse-icon" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"
+                      stroke-width="2" d="M12 5v14m-4-4l4 4 4-4" />
+                  </svg>
+                </button>
+              </div>
+              <div class="form-group col-1" style="margin-bottom: 0;">
+                <label class="form-label">&nbsp;</label>
+                <button type="button" id="order-bidirectional-btn" class="icon-btn" title="Toggle bidirectional order">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24">
+                    <path id="order-bidirectional-icon" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"
+                      stroke-width="2" d="M7 8h10m0 0-3-3m3 3-3 3M17 16H7m0 0 3-3m-3 3 3 3" />
+                  </svg>
+                </button>
               </div>
             </div>
 
-            <!-- By Position mode: directional controls -->
-            <div id="position-mapping" class="mapping-mode-content">
-              <div class="form-row-position">
-                <div class="form-group col-2">
-                  <label class="form-label">Direction</label>
-                  <select id="position-direction" class="form-select">
-                    <option value="top-to-bottom">↓ Top to Bottom</option>
-                    <option value="top-to-bottom-and-back">⇅ Top to Bottom and back</option>
-                    <option value="bottom-to-top">↑ Bottom to Top</option>
-                    <option value="left-to-right">→ Left to Right</option>
-                    <option value="left-to-right-and-back">⇆ Left to Right and back</option>
-                    <option value="right-to-left">← Right to Left</option>
-                  </select>
-                </div>
+            <!-- By Position: Every N + Skip -->
+            <div id="position-mapping" class="mapping-mode-content" style="display: none;">
+              <div id="position-every-skip-row" class="form-row-position">
                 <div class="form-group col-1">
                   <label class="form-label">Every N</label>
                   <input type="number" id="position-every-n" class="form-control" value="2" min="2" max="10">
@@ -2844,6 +2851,8 @@
     const mainMappingButtons = document.querySelectorAll('#main-mapping-selector .mapping-mode-button');
     const orderMappingEl = document.getElementById('order-mapping');
     const positionMappingEl = document.getElementById('position-mapping');
+    const mappingTopRowEl = document.getElementById('mapping-top-row');
+    const positionDirectionGroupEl = document.getElementById('position-direction-group');
     const advancedMappingEl = document.getElementById('advanced-mapping');
     const propertyStrategyContainer = document.getElementById('property-strategy-container');
     const propertySubstitutionsContainer = document.getElementById('property-substitutions-container');
@@ -3432,6 +3441,12 @@
     if (orderModeSelect) {
       orderModeSelect.addEventListener('change', () => {
         orderModeState = orderModeSelect.value;
+      });
+    }
+    const positionDirectionSelect = document.getElementById('position-direction');
+    if (positionDirectionSelect) {
+      positionDirectionSelect.addEventListener('change', () => {
+        updatePositionEverySkipForChainMode();
       });
     }
     if (orderReverseBtn) {
@@ -5645,22 +5660,40 @@
     }
 
     // Helper function to update the mapping display based on current mode
+    function updatePositionEverySkipForChainMode() {
+      const dirEl = document.getElementById('position-direction');
+      const everyEl = document.getElementById('position-every-n');
+      const skipEl = document.getElementById('position-skip');
+      const rowEl = document.getElementById('position-every-skip-row');
+      if (!dirEl || !everyEl || !skipEl) return;
+      const chain = dirEl.value === 'chain-left-to-right' || dirEl.value === 'chain-top-to-bottom';
+      everyEl.disabled = chain;
+      skipEl.disabled = chain;
+      if (rowEl) rowEl.classList.toggle('is-disabled', chain);
+    }
+
     function updateMappingDisplay() {
       if (currentMappingMode === 'order') {
-        // Show ordering controls only
         propertyMappingContainer.style.display = 'block';
+        if (mappingTopRowEl) mappingTopRowEl.style.display = 'grid';
         if (orderMappingEl) orderMappingEl.style.display = 'block';
-        positionMappingEl.style.display = 'none';
+        if (positionDirectionGroupEl) positionDirectionGroupEl.style.display = 'none';
+        if (positionMappingEl) positionMappingEl.style.display = 'none';
         advancedMappingEl.style.display = 'none';
       } else if (currentMappingMode === 'position') {
         propertyMappingContainer.style.display = 'block';
+        if (mappingTopRowEl) mappingTopRowEl.style.display = 'grid';
         if (orderMappingEl) orderMappingEl.style.display = 'none';
-        positionMappingEl.style.display = 'block';
+        if (positionDirectionGroupEl) positionDirectionGroupEl.style.display = 'block';
+        if (positionMappingEl) positionMappingEl.style.display = 'block';
         advancedMappingEl.style.display = 'none';
+        updatePositionEverySkipForChainMode();
       } else if (currentMappingMode === 'advanced') {
         propertyMappingContainer.style.display = 'block';
+        if (mappingTopRowEl) mappingTopRowEl.style.display = 'none';
         if (orderMappingEl) orderMappingEl.style.display = 'none';
-        positionMappingEl.style.display = 'none';
+        if (positionDirectionGroupEl) positionDirectionGroupEl.style.display = 'none';
+        if (positionMappingEl) positionMappingEl.style.display = 'none';
         advancedMappingEl.style.display = 'block';
         updateAdvancedMappingUI();
       }
@@ -7088,10 +7121,13 @@
           } else if (currentMappingMode === 'position') {
             // Position mode: send position configuration
             const direction = document.getElementById('position-direction').value;
-            const everyN = Math.max(2, parseInt(document.getElementById('position-every-n').value) || 2);
-            const skip = Math.max(0, parseInt(document.getElementById('position-skip').value) || 0);
+            const isChainDirection = direction === 'chain-left-to-right' || direction === 'chain-top-to-bottom';
+            const everyN = isChainDirection ? 2 : Math.max(2, parseInt(document.getElementById('position-every-n').value) || 2);
+            const skip = isChainDirection ? 0 : Math.max(0, parseInt(document.getElementById('position-skip').value) || 0);
             message.positionConfig = { direction, everyN, skip };
-            console.log('[UI] Position mapping config', { direction, everyN, skip });
+            message.orderReverse = !!orderReverse;
+            message.orderBidirectional = !!orderBidirectional;
+            console.log('[UI] Position mapping config', { direction, everyN, skip, orderReverse, orderBidirectional });
           } else {
             // Advanced mode: use property mapping configuration
             // Build substitution map from inline selects in strategy rows
